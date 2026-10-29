@@ -314,11 +314,61 @@ def propagar_ganador(partido_actual):
         else:
             sig_partido.visita_id = partido_actual.ganador_id
         db.session.commit()
-# Ruta OBS para partidos de Eliminatoria Directa (KO)
-@app.route('/obs/marcador_ko/<int:partido_id>')
-def obs_marcador_ko(partido_id):
-    partido = PartidoKO.query.get_or_404(partido_id)
-    return render_template('obs_marcador_ko.html', partido=partido)
+# Función auxiliar para obtener el partido activo (de grupos o eliminatoria)
+def obtener_partido_activo():
+    partido_g = PartidoGrupo.query.filter_by(activo=True).first()
+    if partido_g:
+        return partido_g, 'grupo'
+    partido_ko = PartidoKO.query.filter_by(activo=True).first()
+    if partido_ko:
+        return partido_ko, 'ko'
+    return None, None
+
+# Ruta para activar un partido desde la interfaz
+@app.route('/activar_partido/<tipo>/<int:partido_id>', methods=['POST'])
+def activar_partido(tipo, partido_id):
+    # Desactivar todos los partidos de grupos y KO
+    PartidoGrupo.query.update({PartidoGrupo.activo: False})
+    PartidoKO.query.update({PartidoKO.activo: False})
+    
+    # Activar el seleccionado
+    if tipo == 'grupo':
+        p = PartidoGrupo.query.get_or_404(partido_id)
+        p.activo = True
+    elif tipo == 'ko':
+        p = PartidoKO.query.get_or_404(partido_id)
+        p.activo = True
+        
+    db.session.commit()
+    flash('Partido activado para la transmisión en OBS.', 'success')
+    return redirect(request.referrer or url_for('index'))
+
+# URL ÚNICA PARA CONFIGURAR EN OBS
+@app.route('/obs/marcador/activo')
+def obs_marcador_activo():
+    partido, tipo = obtener_partido_activo()
+    return render_template('obs_marcador_activo.html', partido=partido, tipo=tipo)
+
+# API ÚNICA QUE CONSULTA OBS CADA 2 SEGUNDOS
+@app.route('/api/partido_activo')
+def api_partido_activo():
+    partido, tipo = obtener_partido_activo()
+    
+    if not partido:
+        return jsonify({'activo': False})
+        
+    return jsonify({
+        'activo': True,
+        'tipo': tipo,
+        'local_nombre': partido.local.nombre if partido.local else 'TBD',
+        'local_escudo': url_for('static', filename='uploads/' + partido.local.escudo) if partido.local and partido.local.escudo else '',
+        'gl': partido.gl if partido.gl is not None else 0,
+        'visita_nombre': partido.visita.nombre if partido.visita else 'TBD',
+        'visita_escudo': url_for('static', filename='uploads/' + partido.visita.escudo) if partido.visita and partido.visita.escudo else '',
+        'gv': partido.gv if partido.gv is not None else 0,
+        'pen_l': getattr(partido, 'pen_l', None),
+        'pen_v': getattr(partido, 'pen_v', None)
+    })
 
 # API endpoint para la eliminación directa
 @app.route('/api/partido_ko/<int:partido_id>')
