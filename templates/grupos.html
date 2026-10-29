@@ -1,27 +1,121 @@
-{% for p in g.partidos %}
-<div class="border-bottom pb-2 mb-2">
-    <form method="POST" action="{{ url_for('guardar_resultado_grupo') }}" class="row g-2 align-items-center text-center">
-        <!-- Controles de marcadores -->
-        <input type="hidden" name="partido_id" value="{{ p.id }}">
-        <div class="col-4 text-end small fw-bold">{{ p.local.nombre }}</div>
-        <div class="col-2"><input type="number" name="gl" class="form-control form-control-sm text-center" value="{{ p.gl if p.gl is not None else '' }}"></div>
-        <div class="col-2"><input type="number" name="gv" class="form-control form-control-sm text-center" value="{{ p.gv if p.gv is not None else '' }}"></div>
-        <div class="col-4 text-start small fw-bold">{{ p.visita.nombre }}</div>
-        
-        <div class="col-12 mt-1 d-flex justify-content-center gap-2">
-            <button type="submit" class="btn btn-sm btn-outline-secondary py-0">Guardar</button>
-        </div>
-    </form>
-    
-    <!-- BOTÓN PARA ACTIVAR EN OBS -->
-    <div class="text-center mt-1">
-        {% if p.activo %}
-            <span class="badge bg-success">🔴 EN VIVO EN OBS</span>
-        {% else %}
-            <form action="{{ url_for('activar_partido', tipo='grupo', partido_id=p.id) }}" method="POST" style="display:inline;">
-                <button type="submit" class="btn btn-sm btn-outline-danger py-0">📺 Transmitir en OBS</button>
-            </form>
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Fase de Grupos</h2>
+    <div>
+        {% if listo_para_ko %}
+            <a href="{{ url_for('generar_llaves') }}" class="btn btn-warning fw-bold">
+                🏆 Generar Eliminatoria Directa
+            </a>
         {% endif %}
+        <a href="{{ url_for('sortear_grupos') }}" class="btn btn-outline-secondary btn-sm" onclick="return confirm('¿Seguro que deseas volver a sortear los grupos? Se reiniciarán los resultados.');">
+            🔄 Resortear Grupos
+        </a>
     </div>
 </div>
-{% endfor %}
+
+{% if not grupos %}
+    <div class="alert alert-info text-center">
+        No hay grupos generados aún. Ve a la sección de <a href="{{ url_for('equipos') }}">Equipos</a> y presiona <strong>Sortear Grupos</strong>.
+    </div>
+{% else %}
+    <div class="row">
+        {% for g in grupos %}
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
+                    <span>{{ g.nombre }}</span>
+                    <small class="fw-normal">{{ g.equipos|length }} Equipos</small>
+                </div>
+                <div class="card-body">
+                    <!-- TABLA DE POSICIONES -->
+                    <h6 class="text-muted border-bottom pb-1 mb-2">Tabla de Posiciones</h6>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-sm table-striped align-middle text-center mb-0" style="font-size: 0.85rem;">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="text-start">Equipo</th>
+                                    <th>PJ</th>
+                                    <th>G</th>
+                                    <th>E</th>
+                                    <th>P</th>
+                                    <th>GF</th>
+                                    <th>GC</th>
+                                    <th>DG</th>
+                                    <th>Pts</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for fila in tablas[g.id] %}
+                                <tr>
+                                    <td class="text-start fw-bold">
+                                        <img src="{{ url_for('static', filename='uploads/' + fila.equipo.escudo) }}" width="18" height="18" class="me-1 style-contain">
+                                        {{ fila.equipo.nombre }}
+                                    </td>
+                                    <td>{{ fila.pj }}</td>
+                                    <td>{{ fila.g }}</td>
+                                    <td>{{ fila.e }}</td>
+                                    <td>{{ fila.p }}</td>
+                                    <td>{{ fila.gf }}</td>
+                                    <td>{{ fila.gc }}</td>
+                                    <td>{{ fila.dg }}</td>
+                                    <td class="fw-bold bg-light text-primary">{{ fila.pts }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- PARTIDOS Y MARCADORES -->
+                    <h6 class="text-muted border-bottom pb-1 mb-2">Partidos</h6>
+                    {% for p in g.partidos %}
+                    <div class="border-bottom pb-2 mb-2">
+                        <form method="POST" action="{{ url_for('grupos') }}" class="row g-2 align-items-center text-center">
+                            <input type="hidden" name="partido_id" value="{{ p.id }}">
+                            
+                            <!-- Equipo Local -->
+                            <div class="col-4 text-end small fw-bold text-truncate">
+                                {{ p.local.nombre }}
+                                <img src="{{ url_for('static', filename='uploads/' + p.local.escudo) }}" width="20" height="20" class="ms-1 style-contain">
+                            </div>
+
+                            <!-- Marcadores -->
+                            <div class="col-2">
+                                <input type="number" name="gl" class="form-control form-control-sm text-center px-1" value="{{ p.gl if p.gl is not None else '' }}" min="0">
+                            </div>
+                            <div class="col-2">
+                                <input type="number" name="gv" class="form-control form-control-sm text-center px-1" value="{{ p.gv if p.gv is not None else '' }}" min="0">
+                            </div>
+
+                            <!-- Equipo Visitante -->
+                            <div class="col-4 text-start small fw-bold text-truncate">
+                                <img src="{{ url_for('static', filename='uploads/' + p.visita.escudo) }}" width="20" height="20" class="me-1 style-contain">
+                                {{ p.visita.nombre }}
+                            </div>
+
+                            <!-- Botón Guardar -->
+                            <div class="col-12 mt-1 d-flex justify-content-center gap-2">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary py-0">Guardar</button>
+                            </div>
+                        </form>
+
+                        <!-- Botón para OBS -->
+                        <div class="text-center mt-1">
+                            {% if p.activo %}
+                                <span class="badge bg-danger animate__animated animate__flash">🔴 EN VIVO EN OBS</span>
+                            {% else %}
+                                <form action="{{ url_for('activar_partido', tipo='grupo', partido_id=p.id) }}" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0">📺 Transmitir en OBS</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% endif %}
+{% endblock %}
