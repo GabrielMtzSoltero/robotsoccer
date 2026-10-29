@@ -39,7 +39,7 @@ class PartidoGrupo(db.Model):
     visita_id = db.Column(db.Integer, db.ForeignKey('equipo.id'), nullable=False)
     gl = db.Column(db.Integer, nullable=True)
     gv = db.Column(db.Integer, nullable=True)
-
+    activo = db.Column(db.Boolean, default=False)
     local = db.relationship('Equipo', foreign_keys=[local_id])
     visita = db.relationship('Equipo', foreign_keys=[visita_id])
 
@@ -54,8 +54,9 @@ class PartidoKO(db.Model):
     gv = db.Column(db.Integer, nullable=True)
     pen_l = db.Column(db.Integer, nullable=True)
     pen_v = db.Column(db.Integer, nullable=True)
+    activo = db.Column(db.Boolean, default=False)
     ganador_id = db.Column(db.Integer, db.ForeignKey('equipo.id'), nullable=True)
-
+    
     local = db.relationship('Equipo', foreign_keys=[local_id])
     visita = db.relationship('Equipo', foreign_keys=[visita_id])
     ganador = db.relationship('Equipo', foreign_keys=[ganador_id])
@@ -313,7 +314,26 @@ def propagar_ganador(partido_actual):
         else:
             sig_partido.visita_id = partido_actual.ganador_id
         db.session.commit()
+# Ruta OBS para partidos de Eliminatoria Directa (KO)
+@app.route('/obs/marcador_ko/<int:partido_id>')
+def obs_marcador_ko(partido_id):
+    partido = PartidoKO.query.get_or_404(partido_id)
+    return render_template('obs_marcador_ko.html', partido=partido)
 
+# API endpoint para la eliminación directa
+@app.route('/api/partido_ko/<int:partido_id>')
+def api_partido_ko(partido_id):
+    p = PartidoKO.query.get_or_404(partido_id)
+    return jsonify({
+        'local_nombre': p.local.nombre if p.local else 'Por definir',
+        'local_escudo': url_for('static', filename='uploads/' + p.local.escudo) if p.local else '',
+        'gl': p.gl if p.gl is not None else 0,
+        'visita_nombre': p.visita.nombre if p.visita else 'Por definir',
+        'visita_escudo': url_for('static', filename='uploads/' + p.visita.escudo) if p.visita else '',
+        'gv': p.gv if p.gv is not None else 0,
+        'pen_l': p.pen_l,
+        'pen_v': p.pen_v
+    })
 @app.route('/reiniciar')
 def reiniciar():
     PartidoKO.query.delete()

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Marcador OBS - Partido Activo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: transparent !important; margin: 0; padding: 20px; overflow: hidden; }
+        .scoreboard-container { display: inline-flex; align-items: center; background: rgba(15, 23, 42, 0.95); color: #fff; border-radius: 12px; padding: 8px 16px; border: 2px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        .team-box { display: flex; align-items: center; gap: 10px; padding: 0 10px; }
+        .team-logo { width: 45px; height: 45px; object-fit: contain; }
+        .team-name { font-weight: 700; font-size: 1.2rem; text-transform: uppercase; }
+        .score-box { background: #2563eb; color: #fff; font-weight: 800; font-size: 1.5rem; padding: 4px 16px; border-radius: 8px; margin: 0 12px; text-align: center; min-width: 80px; }
+        .penales { font-size: 0.75rem; color: #cbd5e1; display: block; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="scoreboard" class="scoreboard-container hidden">
+        <!-- Local -->
+        <div class="team-box">
+            <img id="local-escudo" src="" class="team-logo">
+            <span id="local-nombre" class="team-name">--</span>
+        </div>
+
+        <!-- Marcador -->
+        <div class="score-box">
+            <div>
+                <span id="gl">0</span> - <span id="gv">0</span>
+            </div>
+            <span id="penales" class="penales"></span>
+        </div>
+
+        <!-- Visita -->
+        <div class="team-box">
+            <span id="visita-nombre" class="team-name">--</span>
+            <img id="visita-escudo" src="" class="team-logo">
+        </div>
+    </div>
+
+    <script>
+        function actualizar() {
+            fetch('/api/partido_activo')
+                .then(r => r.json())
+                .then(d => {
+                    const scoreboard = document.getElementById('scoreboard');
+                    
+                    if (!d.activo) {
+                        scoreboard.classList.add('hidden');
+                        return;
+                    }
+                    
+                    scoreboard.classList.remove('hidden');
+                    document.getElementById('gl').innerText = d.gl;
+                    document.getElementById('gv').innerText = d.gv;
+                    document.getElementById('local-nombre').innerText = d.local_nombre;
+                    document.getElementById('visita-nombre').innerText = d.visita_nombre;
+                    document.getElementById('local-escudo').src = d.local_escudo;
+                    document.getElementById('visita-escudo').src = d.visita_escudo;
+
+                    if (d.pen_l !== null && d.pen_v !== null) {
+                        document.getElementById('penales').innerText = `(Pen: ${d.pen_l} - ${d.pen_v})`;
+                    } else {
+                        document.getElementById('penales').innerText = '';
+                    }
+                })
+                .catch(err => console.error("Error al actualizar:", err));
+        }
+
+        // Consultar cambios cada 2 segundos
+        setInterval(actualizar, 2000);
+        actualizar();
+    </script>
+</body>
+</html>
