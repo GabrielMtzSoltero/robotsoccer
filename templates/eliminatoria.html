@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Eliminatoria Directa</h2>
+
+<div class="row mt-4">
+    {% for p in partidos %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card shadow-sm border-primary">
+            <div class="card-header bg-primary text-white text-center fw-bold">
+                {{ p.nombre_ronda }}
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="partido_id" value="{{ p.id }}">
+                    
+                    <!-- Local -->
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>
+                            {% if p.local %}
+                                <img src="{{ url_for('static', filename='uploads/' + p.local.escudo) }}" width="25">
+                                <strong>{{ p.local.nombre }}</strong>
+                            {% else %}
+                                <em>Por definir</em>
+                            {% endif %}
+                        </span>
+                        <input type="number" name="gl" class="form-control form-control-sm style-input" style="width: 60px;" value="{{ p.gl if p.gl is not none else 0 }}" {% if not p.local or not p.visita %}disabled{% endif %}>
+                    </div>
+
+                    <!-- Visita -->
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>
+                            {% if p.visita %}
+                                <img src="{{ url_for('static', filename='uploads/' + p.visita.escudo) }}" width="25">
+                                <strong>{{ p.visita.nombre }}</strong>
+                            {% else %}
+                                <em>Por definir</em>
+                            {% endif %}
+                        </span>
+                        <input type="number" name="gv" class="form-control form-control-sm style-input" style="width: 60px;" value="{{ p.gv if p.gv is not none else 0 }}" {% if not p.local or not p.visita %}disabled{% endif %}>
+                    </div>
+
+                    <!-- Campos opcionales para Penales en caso de empate -->
+                    <div class="row g-1 my-2 bg-light p-1 rounded">
+                        <div class="col-12 text-center text-muted small">Penales (si hay empate):</div>
+                        <div class="col-6"><input type="number" name="pen_l" placeholder="Pen. Loc" class="form-control form-control-sm" value="{{ p.pen_l if p.pen_l is not none else '' }}"></div>
+                        <div class="col-6"><input type="number" name="pen_v" placeholder="Pen. Vis" class="form-control form-control-sm" value="{{ p.pen_v if p.pen_v is not none else '' }}"></div>
+                    </div>
+
+                    {% if p.local and p.visita %}
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Guardar Resultado</button>
+                    {% endif %}
+                </form>
+
+                {% if p.ganador %}
+                    <div class="alert alert-success text-center mb-0 mt-2 py-1 small">
+                        🏆 Clasificado/Ganador: <strong>{{ p.ganador.nombre }}</strong>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
