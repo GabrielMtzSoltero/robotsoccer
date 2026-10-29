@@ -239,7 +239,26 @@ def generar_llaves():
     db.session.commit()
     flash('Fase de eliminación directa generada.', 'success')
     return redirect(url_for('eliminatoria'))
+@app.route('/eliminar_equipo/<int:equipo_id>', methods=['POST'])
+def eliminar_equipo(equipo_id):
+    # Verificar que el torneo no haya iniciado la fase de grupos
+    if Grupo.query.count() > 0:
+        flash('No se pueden eliminar equipos cuando la fase de grupos ya ha comenzado.', 'danger')
+        return redirect(url_for('equipos'))
 
+    equipo = Equipo.query.get_or_404(equipo_id)
+    
+    # Intentar borrar la imagen del escudo del disco duro
+    if equipo.escudo:
+        ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], equipo.escudo)
+        if os.path.exists(ruta_imagen):
+            os.remove(ruta_imagen)
+
+    db.session.delete(equipo)
+    db.session.commit()
+    flash(f'El equipo "{equipo.nombre}" ha sido eliminado.', 'success')
+    return redirect(url_for('equipos'))
+    
 @app.route('/eliminatoria', methods=['GET', 'POST'])
 def eliminatoria():
     if request.method == 'POST':

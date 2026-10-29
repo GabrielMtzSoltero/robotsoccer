@@ -22,7 +22,12 @@
                         <label class="form-label">Escudo / Imagen</label>
                         <input type="file" name="escudo" class="form-control" accept="image/*" required>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Guardar Equipo</button>
+                    <button type="submit" class="btn btn-primary w-100" {% if hay_grupos %}disabled{% endif %}>
+                        Guardar Equipo
+                    </button>
+                    {% if hay_grupos %}
+                        <small class="text-danger d-block text-center mt-2">La competencia ya inició; no puedes agregar más equipos.</small>
+                    {% endif %}
                 </form>
             </div>
         </div>
@@ -31,18 +36,29 @@
     <div class="col-md-8">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h3>Equipos Registrados ({{ equipos|length }})</h3>
-            {% if equipos|length >= 3 %}
+            {% if equipos|length >= 3 and not hay_grupos %}
                 <a href="{{ url_for('sortear_grupos') }}" class="btn btn-success">Sortear Grupos ▶</a>
             {% endif %}
         </div>
         <div class="row">
             {% for eq in equipos %}
             <div class="col-md-6 mb-3">
-                <div class="card h-100 shadow-sm flex-row align-items-center p-2">
-                    <img src="{{ url_for('static', filename='uploads/' + eq.escudo) }}" class="rounded" style="width: 70px; height: 70px; object-fit: contain;">
-                    <div class="card-body py-1">
-                        <h5 class="card-title mb-1">{{ eq.nombre }}</h5>
-                        <p class="card-text text-muted small mb-0">{{ eq.integrante1 }} / {{ eq.integrante2 }}</p>
+                <div class="card h-100 shadow-sm p-2">
+                    <div class="d-flex align-items-center">
+                        <img src="{{ url_for('static', filename='uploads/' + eq.escudo) }}" class="rounded" style="width: 60px; height: 60px; object-fit: contain;">
+                        <div class="card-body py-1 pe-0">
+                            <h5 class="card-title mb-1 h6">{{ eq.nombre }}</h5>
+                            <p class="card-text text-muted small mb-0">{{ eq.integrante1 }} / {{ eq.integrante2 }}</p>
+                        </div>
+                        
+                        <!-- Botón para Eliminar Equipo -->
+                        {% if not hay_grupos %}
+                        <form action="{{ url_for('eliminar_equipo', equipo_id=eq.id) }}" method="POST" class="ms-auto" onsubmit="return confirm('¿Seguro que deseas eliminar el equipo {{ eq.nombre }}?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm border-0" title="Eliminar equipo">
+                                🗑️
+                            </button>
+                        </form>
+                        {% endif %}
                     </div>
                 </div>
             </div>
