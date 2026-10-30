@@ -1,7 +1,8 @@
 import os
 import math
 import random
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
@@ -11,8 +12,22 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///torneo.db'
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
+# Credenciales fijas para el panel
+ADMIN_USER = "admin"
+ADMIN_PASS = "1234"
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
+
+# Decorador de autenticación
+def login_requerido(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            flash('Debes iniciar sesión para realizar cambios.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ----------------------------------------------------------------------
 # MODELOS DE BASE DE DATOS
@@ -45,7 +60,7 @@ class PartidoGrupo(db.Model):
 
 class PartidoKO(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    ronda = db.Column(db.Integer, nullable=False)  # 1: 1/8s o 1/4s, etc.
+    ronda = db.Column(db.Integer, nullable=False)  
     nombre_ronda = db.Column(db.String(50), nullable=False)
     posicion = db.Column(db.Integer, nullable=False)
     local_id = db.Column(db.Integer, db.ForeignKey('equipo.id'), nullable=True)
@@ -89,6 +104,28 @@ def calcular_tabla(grupo):
     return tabla
 
 # ----------------------------------------------------------------------
+# RUTAS DE AUTENTICACIÓN
+# ----------------------------------------------------------------------
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        usuario = request.form.get('usuario')
+        password = request.form.get('password')
+        if usuario == ADMIN_USER and password == ADMIN_PASS:
+            session['logged_in'] = True
+            flash('Sesión iniciada correctamente.', 'success')
+            return redirect(url_for('equipos'))
+        else:
+            flash('Usuario o contraseña incorrectos.', 'danger')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    flash('Has cerrado sesión.', 'info')
+    return redirect(url_for('login'))
+
+# ----------------------------------------------------------------------
 # RUTAS DE LA APLICACIÓN
 # ----------------------------------------------------------------------
 @app.route('/')
@@ -98,6 +135,10 @@ def index():
 @app.route('/equipos', methods=['GET', 'POST'])
 def equipos():
     if request.method == 'POST':
+        if not session.get('logged_in'):
+            flash('Debes iniciar sesión para registrar equipos.', 'danger')
+            return redirect(url_for('login'))
+            
         nombre = request.form.get('nombre', '').strip()
         int1 = request.form.get('integrante1', '').strip()
         int2 = request.form.get('integrante2', '').strip()
@@ -124,6 +165,7 @@ def equipos():
     return render_template('equipos.html', equipos=lista_equipos, hay_grupos=hay_grupos)
 
 @app.route('/sortear_grupos')
+@login_requerido
 def sortear_grupos():
     equipos = Equipo.query.all()
     n = len(equipos)
@@ -131,7 +173,6 @@ def sortear_grupos():
         flash('Se requieren al menos 3 equipos para iniciar el torneo.', 'warning')
         return redirect(url_for('equipos'))
 
-    # Limpiar estado anterior
     PartidoKO.query.delete()
     PartidoGrupo.query.delete()
     Grupo.query.delete()
@@ -152,7 +193,6 @@ def sortear_grupos():
         eq.grupo_id = grupos[i % num_grupos].id
     db.session.commit()
 
-    # Generar calendario por grupo
     for g in grupos:
         eqs = g.equipos
         m = len(eqs)
@@ -168,6 +208,10 @@ def sortear_grupos():
 @app.route('/grupos', methods=['GET', 'POST'])
 def grupos():
     if request.method == 'POST':
+        if not session.get('logged_in'):
+            flash('Debes iniciar sesión para actualizar marcadores.', 'danger')
+            return redirect(url_for('login'))
+            
         partido_id = request.form.get('partido_id')
         gl = request.form.get('gl')
         gv = request.form.get('gv')
@@ -181,20 +225,18 @@ def grupos():
 
     lista_grupos = Grupo.query.all()
     tablas = {g.id: calcular_tabla(g) for g in lista_grupos}
-    
-    # Verificar si todos los partidos de grupos han finalizado
     pendientes = PartidoGrupo.query.filter((PartidoGrupo.gl == None) | (PartidoGrupo.gv == None)).count()
     listo_para_ko = (len(lista_grupos) > 0) and (pendientes == 0)
 
     return render_template('grupos.html', grupos=lista_grupos, tablas=tablas, listo_para_ko=listo_para_ko)
 
 @app.route('/generar_llaves')
+@login_requerido
 def generar_llaves():
     grupos = Grupo.query.all()
     if not grupos:
         return redirect(url_for('equipos'))
 
-    # Seleccionar clasificados
     clasificados = []
     segundos = []
 
@@ -205,22 +247,18 @@ def generar_llaves():
         if len(tabla) >= 2:
             segundos.append(tabla[1])
 
-    # Ordenar los segundos lugares por rendimiento para elegir los mejores si es necesario
     segundos.sort(key=lambda x: (-x['pts'], -x['dg'], -x['gf']))
     
-    # Determinar cuántos entran según potencia de 2 más cercana (2, 4, 8, 16)
     total_base = len(clasificados)
     objetivo_llave = 2
     while objetivo_llave < total_base:
         objetivo_llave *= 2
 
-    # Si faltan equipos para la llave, agregar los mejores segundos
     i = 0
     while len(clasificados) < objetivo_llave and i < len(segundos):
         clasificados.append(segundos[i]['equipo'])
         i += 1
 
-    # Crear cuadro eliminatorio (Ronda 1)
     PartidoKO.query.delete()
     db.session.commit()
 
@@ -233,23 +271,22 @@ def generar_llaves():
         loc = clasificados[k]
         vis = clasificados[k+1] if (k+1) < n else None
         p = PartidoKO(ronda=1, nombre_ronda=nombre_r, posicion=k//2, local_id=loc.id, visita_id=vis.id if vis else None)
-        if vis is None:  # Bye
+        if vis is None:
             p.ganador_id = loc.id
         db.session.add(p)
     
     db.session.commit()
     flash('Fase de eliminación directa generada.', 'success')
     return redirect(url_for('eliminatoria'))
+
 @app.route('/eliminar_equipo/<int:equipo_id>', methods=['POST'])
+@login_requerido
 def eliminar_equipo(equipo_id):
-    # Verificar que el torneo no haya iniciado la fase de grupos
     if Grupo.query.count() > 0:
         flash('No se pueden eliminar equipos cuando la fase de grupos ya ha comenzado.', 'danger')
         return redirect(url_for('equipos'))
 
     equipo = Equipo.query.get_or_404(equipo_id)
-    
-    # Intentar borrar la imagen del escudo del disco duro
     if equipo.escudo:
         ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], equipo.escudo)
         if os.path.exists(ruta_imagen):
@@ -263,6 +300,10 @@ def eliminar_equipo(equipo_id):
 @app.route('/eliminatoria', methods=['GET', 'POST'])
 def eliminatoria():
     if request.method == 'POST':
+        if not session.get('logged_in'):
+            flash('Debes iniciar sesión para actualizar marcadores.', 'danger')
+            return redirect(url_for('login'))
+
         partido_id = request.form.get('partido_id')
         gl = int(request.form.get('gl', 0))
         gv = int(request.form.get('gv', 0))
@@ -283,15 +324,21 @@ def eliminatoria():
                 p.ganador_id = p.local_id if p.pen_l > p.pen_v else p.visita_id
             
             db.session.commit()
-            
-            # Propagar ganador a la siguiente ronda
             propagar_ganador(p)
             flash('Resultado de eliminatoria actualizado.', 'success')
 
         return redirect(url_for('eliminatoria'))
 
     partidos = PartidoKO.query.order_by(PartidoKO.ronda, PartidoKO.posicion).all()
-    return render_template('eliminatoria.html', partidos=partidos)
+    
+    # Agrupar por ronda para el bracket visual
+    rondas = {}
+    for p in partidos:
+        if p.ronda not in rondas:
+            rondas[p.ronda] = {'nombre': p.nombre_ronda, 'partidos': []}
+        rondas[p.ronda]['partidos'].append(p)
+
+    return render_template('eliminatoria.html', rondas=rondas)
 
 def propagar_ganador(partido_actual):
     sig_ronda = partido_actual.ronda + 1
@@ -301,7 +348,6 @@ def propagar_ganador(partido_actual):
     sig_partido = PartidoKO.query.filter_by(ronda=sig_ronda, posicion=sig_posicion).first()
     
     if not sig_partido:
-        # Contar cuántos partidos hay en la ronda actual para ver si sigue la final
         total_ronda = PartidoKO.query.filter_by(ronda=partido_actual.ronda).count()
         if total_ronda > 1:
             nom_sig = "Final" if total_ronda == 2 else f"Ronda {sig_ronda}"
@@ -314,7 +360,7 @@ def propagar_ganador(partido_actual):
         else:
             sig_partido.visita_id = partido_actual.ganador_id
         db.session.commit()
-# Función auxiliar para obtener el partido activo (de grupos o eliminatoria)
+
 def obtener_partido_activo():
     partido_g = PartidoGrupo.query.filter_by(activo=True).first()
     if partido_g:
@@ -324,14 +370,12 @@ def obtener_partido_activo():
         return partido_ko, 'ko'
     return None, None
 
-# Ruta para activar un partido desde la interfaz
 @app.route('/activar_partido/<tipo>/<int:partido_id>', methods=['POST'])
+@login_requerido
 def activar_partido(tipo, partido_id):
-    # Desactivar todos los partidos de grupos y KO
     PartidoGrupo.query.update({PartidoGrupo.activo: False})
     PartidoKO.query.update({PartidoKO.activo: False})
     
-    # Activar el seleccionado
     if tipo == 'grupo':
         p = PartidoGrupo.query.get_or_404(partido_id)
         p.activo = True
@@ -343,13 +387,11 @@ def activar_partido(tipo, partido_id):
     flash('Partido activado para la transmisión en OBS.', 'success')
     return redirect(request.referrer or url_for('index'))
 
-# URL ÚNICA PARA CONFIGURAR EN OBS
 @app.route('/obs/marcador/activo')
 def obs_marcador_activo():
     partido, tipo = obtener_partido_activo()
     return render_template('obs_marcador_activo.html', partido=partido, tipo=tipo)
 
-# API ÚNICA QUE CONSULTA OBS CADA 2 SEGUNDOS
 @app.route('/api/partido_activo')
 def api_partido_activo():
     partido, tipo = obtener_partido_activo()
@@ -370,7 +412,6 @@ def api_partido_activo():
         'pen_v': getattr(partido, 'pen_v', None)
     })
 
-# API endpoint para la eliminación directa
 @app.route('/api/partido_ko/<int:partido_id>')
 def api_partido_ko(partido_id):
     p = PartidoKO.query.get_or_404(partido_id)
@@ -384,7 +425,9 @@ def api_partido_ko(partido_id):
         'pen_l': p.pen_l,
         'pen_v': p.pen_v
     })
+
 @app.route('/reiniciar')
+@login_requerido
 def reiniciar():
     PartidoKO.query.delete()
     PartidoGrupo.query.delete()
