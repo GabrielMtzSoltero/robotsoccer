@@ -29,10 +29,6 @@ def login_requerido(f):
         return f(*args, **kwargs)
     return decorated_function
 
-
-
- # <--- Bloquea acceso si no hay sesión
-
 # ----------------------------------------------------------------------
 # MODELOS DE BASE DE DATOS
 # ----------------------------------------------------------------------
@@ -108,11 +104,10 @@ def calcular_tabla(grupo):
     return tabla
 
 # ----------------------------------------------------------------------
-# RUTAS DE AUTENTICACIÓN
+# RUTAS DE AUTENTICACIÓN Y NAVEGACIÓN
 # ----------------------------------------------------------------------
 @app.route('/')
 def index():
-    # Si ya inició sesión, lo mandamos a equipos; si no, al login
     if session.get('logged_in'):
         return redirect(url_for('equipos'))
     return redirect(url_for('login'))
@@ -137,13 +132,9 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/equipos', methods=['GET', 'POST'])
-@login_requerido  # <--- Bloquea acceso si no hay sesión
+@login_requerido
 def equipos():
     if request.method == 'POST':
-        if not session.get('logged_in'):
-            flash('Debes iniciar sesión para registrar equipos.', 'danger')
-            return redirect(url_for('login'))
-            
         nombre = request.form.get('nombre', '').strip()
         int1 = request.form.get('integrante1', '').strip()
         int2 = request.form.get('integrante2', '').strip()
@@ -214,10 +205,6 @@ def sortear_grupos():
 @login_requerido
 def grupos():
     if request.method == 'POST':
-        if not session.get('logged_in'):
-            flash('Debes iniciar sesión para actualizar marcadores.', 'danger')
-            return redirect(url_for('login'))
-            
         partido_id = request.form.get('partido_id')
         gl = request.form.get('gl')
         gv = request.form.get('gv')
@@ -244,25 +231,34 @@ def generar_llaves():
         return redirect(url_for('equipos'))
 
     clasificados = []
-    segundos = []
+    resto_equipos = []
 
     for g in grupos:
         tabla = calcular_tabla(g)
         if len(tabla) >= 1:
             clasificados.append(tabla[0]['equipo'])
         if len(tabla) >= 2:
-            segundos.append(tabla[1])
+            for item in tabla[1:]:
+                resto_equipos.append(item)
 
-    segundos.sort(key=lambda x: (-x['pts'], -x['dg'], -x['gf']))
+    # Ordenar los siguientes lugares por rendimiento
+    resto_equipos.sort(key=lambda x: (-x['pts'], -x['dg'], -x['gf']))
     
     total_base = len(clasificados)
-    objetivo_llave = 2
-    while objetivo_llave < total_base:
-        objetivo_llave *= 2
+    
+    # Forzar a potencias de 2 (2, 4, 8, 16) ajustando preferentemente hasta 16 (Octavos de Final)
+    if total_base <= 2:
+        objetivo_llave = 2
+    elif total_base <= 4:
+        objetivo_llave = 4
+    elif total_base <= 8:
+        objetivo_llave = 8
+    else:
+        objetivo_llave = 16
 
     i = 0
-    while len(clasificados) < objetivo_llave and i < len(segundos):
-        clasificados.append(segundos[i]['equipo'])
+    while len(clasificados) < objetivo_llave and i < len(resto_equipos):
+        clasificados.append(resto_equipos[i]['equipo'])
         i += 1
 
     PartidoKO.query.delete()
@@ -271,18 +267,26 @@ def generar_llaves():
     random.shuffle(clasificados)
     n = len(clasificados)
     
-    nombre_r = "Final" if n == 2 else ("Semifinales" if n == 4 else ("Cuartos de final" if n == 8 else f"Ronda de {n}"))
+    # Nombre de la ronda inicial
+    if n > 8:
+        nombre_r = "Octavos de final"
+    elif n > 4:
+        nombre_r = "Cuartos de final"
+    elif n > 2:
+        nombre_r = "Semifinales"
+    else:
+        nombre_r = "Final"
 
     for k in range(0, n, 2):
         loc = clasificados[k]
         vis = clasificados[k+1] if (k+1) < n else None
         p = PartidoKO(ronda=1, nombre_ronda=nombre_r, posicion=k//2, local_id=loc.id, visita_id=vis.id if vis else None)
-        if vis is None:
+        if vis is None:  # Pase automático
             p.ganador_id = loc.id
         db.session.add(p)
     
     db.session.commit()
-    flash('Fase de eliminación directa generada.', 'success')
+    flash('Fase de eliminación directa generada con éxito.', 'success')
     return redirect(url_for('eliminatoria'))
 
 @app.route('/eliminar_equipo/<int:equipo_id>', methods=['POST'])
@@ -302,15 +306,11 @@ def eliminar_equipo(equipo_id):
     db.session.commit()
     flash(f'El equipo "{equipo.nombre}" ha sido eliminado.', 'success')
     return redirect(url_for('equipos'))
-    
+
 @app.route('/eliminatoria', methods=['GET', 'POST'])
 @login_requerido
 def eliminatoria():
     if request.method == 'POST':
-        if not session.get('logged_in'):
-            flash('Debes iniciar sesión para actualizar marcadores.', 'danger')
-            return redirect(url_for('login'))
-
         partido_id = request.form.get('partido_id')
         gl = int(request.form.get('gl', 0))
         gv = int(request.form.get('gv', 0))
@@ -338,7 +338,6 @@ def eliminatoria():
 
     partidos = PartidoKO.query.order_by(PartidoKO.ronda, PartidoKO.posicion).all()
     
-    # Agrupar por ronda para el bracket visual
     rondas = {}
     for p in partidos:
         if p.ronda not in rondas:
@@ -357,7 +356,15 @@ def propagar_ganador(partido_actual):
     if not sig_partido:
         total_ronda = PartidoKO.query.filter_by(ronda=partido_actual.ronda).count()
         if total_ronda > 1:
-            nom_sig = "Final" if total_ronda == 2 else f"Ronda {sig_ronda}"
+            if total_ronda == 8:
+                nom_sig = "Cuartos de final"
+            elif total_ronda == 4:
+                nom_sig = "Semifinales"
+            elif total_ronda == 2:
+                nom_sig = "Final"
+            else:
+                nom_sig = f"Ronda {sig_ronda}"
+                
             sig_partido = PartidoKO(ronda=sig_ronda, nombre_ronda=nom_sig, posicion=sig_posicion)
             db.session.add(sig_partido)
 
@@ -436,12 +443,17 @@ def api_partido_ko(partido_id):
 @app.route('/reiniciar')
 @login_requerido
 def reiniciar():
+    # Eliminar solo partidos y grupos sin eliminar la tabla de equipos
     PartidoKO.query.delete()
     PartidoGrupo.query.delete()
     Grupo.query.delete()
-    Equipo.query.delete()
+    
+    # Desvincular equipos de los grupos eliminados
+    for e in Equipo.query.all():
+        e.grupo_id = None
+        
     db.session.commit()
-    flash('Se han borrado todos los datos del torneo.', 'info')
+    flash('Se han borrado los grupos y partidos. Los equipos registrados se han conservado.', 'info')
     return redirect(url_for('equipos'))
 
 if __name__ == '__main__':
