@@ -29,6 +29,10 @@ def login_requerido(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
+
+ # <--- Bloquea acceso si no hay sesión
+
 # ----------------------------------------------------------------------
 # MODELOS DE BASE DE DATOS
 # ----------------------------------------------------------------------
@@ -106,6 +110,13 @@ def calcular_tabla(grupo):
 # ----------------------------------------------------------------------
 # RUTAS DE AUTENTICACIÓN
 # ----------------------------------------------------------------------
+@app.route('/')
+def index():
+    # Si ya inició sesión, lo mandamos a equipos; si no, al login
+    if session.get('logged_in'):
+        return redirect(url_for('equipos'))
+    return redirect(url_for('login'))
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -125,14 +136,8 @@ def logout():
     flash('Has cerrado sesión.', 'info')
     return redirect(url_for('login'))
 
-# ----------------------------------------------------------------------
-# RUTAS DE LA APLICACIÓN
-# ----------------------------------------------------------------------
-@app.route('/')
-def index():
-    return redirect(url_for('equipos'))
-
 @app.route('/equipos', methods=['GET', 'POST'])
+@login_requerido  # <--- Bloquea acceso si no hay sesión
 def equipos():
     if request.method == 'POST':
         if not session.get('logged_in'):
@@ -206,6 +211,7 @@ def sortear_grupos():
     return redirect(url_for('grupos'))
 
 @app.route('/grupos', methods=['GET', 'POST'])
+@login_requerido
 def grupos():
     if request.method == 'POST':
         if not session.get('logged_in'):
@@ -298,6 +304,7 @@ def eliminar_equipo(equipo_id):
     return redirect(url_for('equipos'))
     
 @app.route('/eliminatoria', methods=['GET', 'POST'])
+@login_requerido
 def eliminatoria():
     if request.method == 'POST':
         if not session.get('logged_in'):
