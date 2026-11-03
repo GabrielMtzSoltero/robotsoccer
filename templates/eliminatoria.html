@@ -1,123 +1,311 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Cuadro de Eliminatoria Directa</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Cuadro de Eliminatoria Directa</h2>
+</div>
 
 <style>
+    /* Contenedor principal que abarca todo el ancho disponible */
     .bracket-container {
-        display: flex;
-        overflow-x: auto;
-        gap: 20px;
-        padding: 20px 0;
+        position: relative;
+        width: 100%;
+        padding: 20px 10px;
+        box-sizing: border-box;
     }
-    .bracket-round {
-        flex: 0 0 280px;
+
+    /* El contenedor de las columnas se distribuye de punta a punta */
+    .bracket-wrapper {
+        display: flex;
+        justify-content: space-between; /* Espacia uniformemente las rondas de extremo a extremo */
+        gap: 20px;
+        position: relative;
+        z-index: 2;
+        width: 100%;
+    }
+
+    /* Cada columna toma el mismo ancho proporcional flexible */
+    .bracket-column {
+        flex: 1; /* Hace que todas las columnas crezcan y se repartan el ancho equitativamente */
+        min-width: 200px; /* Evita que se compriman demasiado en pantallas pequeñas */
         display: flex;
         flex-direction: column;
         justify-content: space-around;
+        position: relative;
     }
+
+    .bracket-match-pair {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        flex-grow: 1;
+        margin: 15px 0;
+    }
+
     .match-card {
-        background: #fff;
+        background: #ffffff;
         border-radius: 8px;
-        border: 1px solid #dee2e6;
+        border: 2px solid #cbd5e1;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
+        margin: 15px 0;
+        position: relative;
     }
+
     .match-header {
         background: #0d6efd;
         color: white;
         font-size: 0.8rem;
         padding: 4px 8px;
-        border-top-left-radius: 7px;
-        border-top-right-radius: 7px;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+    }
+
+    /* Lienzo SVG adaptado al ancho total */
+    #bracket-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1;
     }
 </style>
 
 {% if not rondas %}
     <div class="alert alert-info text-center mt-4">
-        Aún no se ha generado la fase de eliminatorias.
+        Aún no se ha generado la fase de eliminatorias. Ve a la <a href="{{ url_for('grupos') }}">Fase de Grupos</a> para terminar los partidos y generar las llaves.
     </div>
 {% else %}
-    <div class="bracket-container">
-        {% for ronda_num, info in rondas.items() %}
-        <div class="bracket-round">
-            <h5 class="text-center text-primary fw-bold mb-3">{{ info.nombre }}</h5>
-            
-            {% for p in info.partidos %}
-            <div class="match-card">
-                <div class="match-header d-flex justify-content-between align-items-center">
-                    <span>M-{{ p.id }}</span>
-                    {% if p.activo %}
-                        <span class="badge bg-danger">🔴 OBS</span>
-                    {% endif %}
-                </div>
+    <div class="bracket-container" id="bracket-container">
+        <!-- Canvas SVG donde se trazarán las líneas -->
+        <svg id="bracket-svg"></svg>
+
+        <div class="bracket-wrapper">
+            {% for ronda_num, info in rondas.items() %}
+            <div class="bracket-column" data-ronda="{{ ronda_num }}">
+                <h5 class="text-center text-primary fw-bold mb-3 border-bottom pb-2">{{ info.nombre }}</h5>
                 
-                <div class="p-2">
-                    <form method="POST">
-                        <input type="hidden" name="partido_id" value="{{ p.id }}">
+                {% for p in info.partidos %}
+                    {% if loop.index0 % 2 == 0 %}
+                        <div class="bracket-match-pair">
+                    {% endif %}
+
+                    <div class="match-card" data-ronda="{{ p.ronda }}" data-posicion="{{ p.posicion }}">
+                        <div class="match-header d-flex justify-content-between align-items-center">
+                            <span>Llave {{ p.posicion + 1 }}</span>
+                            {% if p.activo %}
+                                <span class="badge bg-danger">🔴 OBS</span>
+                            {% endif %}
+                        </div>
                         
-                        <!-- Local -->
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="small text-truncate" style="max-width: 170px;">
-                                {% if p.local %}
-                                    <img src="{{ url_for('static', filename='uploads/' + p.local.escudo) }}" width="18" height="18">
-                                    <strong>{{ p.local.nombre }}</strong>
-                                {% else %}
-                                    <em class="text-muted">Por definir</em>
+                        <div class="p-2">
+                            <form class="ajax-form-ko">
+                                <input type="hidden" name="partido_id" value="{{ p.id }}">
+                                
+                                <!-- Local -->
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="small text-truncate" style="max-width: 170px;">
+                                        {% if p.local %}
+                                            <img src="{{ url_for('static', filename='uploads/' + p.local.escudo) }}" width="18" height="18" class="me-1">
+                                            <strong>{{ p.local.nombre }}</strong>
+                                        {% else %}
+                                            <em class="text-muted">Por definir</em>
+                                        {% endif %}
+                                    </span>
+                                    <input type="number" name="gl" class="form-control form-control-sm text-center px-1" style="width: 45px;" value="{{ p.gl if p.gl is not none else '' }}" {% if not session.get('logged_in') or not p.local or not p.visita %}disabled{% endif %}>
+                                </div>
+
+                                <!-- Visita -->
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small text-truncate" style="max-width: 170px;">
+                                        {% if p.visita %}
+                                            <img src="{{ url_for('static', filename='uploads/' + p.visita.escudo) }}" width="18" height="18" class="me-1">
+                                            <strong>{{ p.visita.nombre }}</strong>
+                                        {% else %}
+                                            <em class="text-muted">Por definir</em>
+                                        {% endif %}
+                                    </span>
+                                    <input type="number" name="gv" class="form-control form-control-sm text-center px-1" style="width: 45px;" value="{{ p.gv if p.gv is not none else '' }}" {% if not session.get('logged_in') or not p.local or not p.visita %}disabled{% endif %}>
+                                </div>
+
+                                <!-- Penales -->
+                                {% if p.gl is not none and p.gv is not none and p.gl == p.gv %}
+                                <div class="row g-1 mb-2 bg-light p-1 rounded">
+                                    <div class="col-12 text-center text-muted" style="font-size: 0.7rem;">Penales:</div>
+                                    <div class="col-6"><input type="number" name="pen_l" placeholder="Loc" class="form-control form-control-sm text-center px-1" value="{{ p.pen_l if p.pen_l is not none else '' }}" {% if not session.get('logged_in') %}disabled{% endif %}></div>
+                                    <div class="col-6"><input type="number" name="pen_v" placeholder="Vis" class="form-control form-control-sm text-center px-1" value="{{ p.pen_v if p.pen_v is not none else '' }}" {% if not session.get('logged_in') %}disabled{% endif %}></div>
+                                </div>
                                 {% endif %}
-                            </span>
-                            <input type="number" name="gl" class="form-control form-control-sm text-center px-1" style="width: 45px;" value="{{ p.gl if p.gl is not none else '' }}" {% if not session.get('logged_in') or not p.local or not p.visita %}disabled{% endif %}>
-                        </div>
 
-                        <!-- Visita -->
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="small text-truncate" style="max-width: 170px;">
-                                {% if p.visita %}
-                                    <img src="{{ url_for('static', filename='uploads/' + p.visita.escudo) }}" width="18" height="18">
-                                    <strong>{{ p.visita.nombre }}</strong>
-                                {% else %}
-                                    <em class="text-muted">Por definir</em>
+                                {% if session.get('logged_in') and p.local and p.visita %}
+                                    <button type="submit" class="btn btn-sm btn-primary w-100 py-0 mb-1" style="font-size: 0.75rem;">Guardar Resultado</button>
                                 {% endif %}
-                            </span>
-                            <input type="number" name="gv" class="form-control form-control-sm text-center px-1" style="width: 45px;" value="{{ p.gv if p.gv is not none else '' }}" {% if not session.get('logged_in') or not p.local or not p.visita %}disabled{% endif %}>
-                        </div>
-
-                        <!-- Penales -->
-                        {% if p.gl is not none and p.gv is not none and p.gl == p.gv %}
-                        <div class="row g-1 mb-2 bg-light p-1 rounded">
-                            <div class="col-12 text-center text-muted" style="font-size: 0.7rem;">Penales:</div>
-                            <div class="col-6"><input type="number" name="pen_l" placeholder="Loc" class="form-control form-control-sm text-center px-1" value="{{ p.pen_l if p.pen_l is not none else '' }}" {% if not session.get('logged_in') %}disabled{% endif %}></div>
-                            <div class="col-6"><input type="number" name="pen_v" placeholder="Vis" class="form-control form-control-sm text-center px-1" value="{{ p.pen_v if p.pen_v is not none else '' }}" {% if not session.get('logged_in') %}disabled{% endif %}></div>
-                        </div>
-                        {% endif %}
-
-                        {% if session.get('logged_in') and p.local and p.visita %}
-                            <button type="submit" class="btn btn-sm btn-primary w-100 py-0 mb-1" style="font-size: 0.75rem;">Guardar</button>
-                        {% endif %}
-                    </form>
-
-                    <!-- Botón OBS para la eliminatoria -->
-                    {% if session.get('logged_in') and p.local and p.visita %}
-                    <div class="text-center mt-1">
-                        {% if p.activo %}
-                            <span class="badge bg-success" style="font-size: 0.65rem;">EN VIVO EN OBS</span>
-                        {% else %}
-                            <form action="{{ url_for('activar_partido', tipo='ko', partido_id=p.id) }}" method="POST" style="display:inline;">
-                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 w-100" style="font-size: 0.7rem;">📺 Transmitir en OBS</button>
                             </form>
-                        {% endif %}
-                    </div>
-                    {% endif %}
 
-                    {% if p.ganador %}
-                        <div class="alert alert-success text-center mb-0 mt-1 py-0 small" style="font-size: 0.75rem;">
-                            🏆 {{ p.ganador.nombre }}
+                            <!-- Botón OBS -->
+                            {% if session.get('logged_in') and p.local and p.visita %}
+                            <div class="text-center mt-1 obs-action-container" data-tipo="ko" data-id="{{ p.id }}">
+                                {% if p.activo %}
+                                    <span class="badge bg-success" style="font-size: 0.65rem;">EN VIVO EN OBS</span>
+                                {% else %}
+                                    <form class="ajax-form-obs d-inline" action="{{ url_for('api_activar_partido', tipo='ko', partido_id=p.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 w-100" style="font-size: 0.7rem;">📺 Transmitir en OBS</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if p.ganador %}
+                                <div class="alert alert-success text-center mb-0 mt-1 py-0 small" style="font-size: 0.75rem;">
+                                    🏆 {{ p.ganador.nombre }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if loop.index0 % 2 != 0 or loop.last %}
                         </div>
                     {% endif %}
-                </div>
+                {% endfor %}
             </div>
             {% endfor %}
         </div>
-        {% endfor %}
     </div>
 {% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('bracket-container');
+    const svg = document.getElementById('bracket-svg');
+
+    // Función para dibujar los conectores SVG de forma dinámica
+    function drawBracketLines() {
+        if (!svg || !container) return;
+        
+        // Ajustar resolución interna del SVG al tamaño completo del contenedor
+        svg.setAttribute('width', container.scrollWidth);
+        svg.setAttribute('height', container.scrollHeight);
+        svg.innerHTML = '';
+
+        const containerRect = container.getBoundingClientRect();
+        const columnas = Array.from(document.querySelectorAll('.bracket-column'));
+
+        columnas.forEach((col, idx) => {
+            if (idx === columnas.length - 1) return; // La última ronda (Final) no envía líneas a la derecha
+
+            const siguienteCol = columnas[idx + 1];
+            const partidosOrigen = Array.from(col.querySelectorAll('.match-card'));
+            const partidosDestino = Array.from(siguienteCol.querySelectorAll('.match-card'));
+
+            partidosOrigen.forEach(card => {
+                const ronda = parseInt(card.getAttribute('data-ronda'));
+                const pos = parseInt(card.getAttribute('data-posicion'));
+
+                // El partido actual (pos) avanza al partido floor(pos/2) de la siguiente ronda
+                const posDestino = Math.floor(pos / 2);
+                const targetCard = partidosDestino.find(c => parseInt(c.getAttribute('data-posicion')) === posDestino);
+
+                if (targetCard) {
+                    const rectStart = card.getBoundingClientRect();
+                    const rectTarget = targetCard.getBoundingClientRect();
+
+                    // Coordenadas relativas al contenedor SVG
+                    const startX = rectStart.right - containerRect.left;
+                    const startY = rectStart.top + (rectStart.height / 2) - containerRect.top;
+
+                    const endX = rectTarget.left - containerRect.left;
+                    const endY = rectTarget.top + (rectTarget.height / 2) - containerRect.top;
+
+                    const midX = startX + (endX - startX) / 2;
+
+                    // Crear línea ortogonal (Salida horizontal -> cambio vertical -> Entrada horizontal)
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const d = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
+                    
+                    path.setAttribute('d', d);
+                    path.setAttribute('stroke', '#94a3b8');
+                    path.setAttribute('stroke-width', '2');
+                    path.setAttribute('fill', 'none');
+
+                    svg.appendChild(path);
+                }
+            });
+        });
+    }
+
+    // Dibujar las líneas al cargar y redimensionar
+    drawBracketLines();
+    window.addEventListener('resize', drawBracketLines);
+
+    // Guardar eliminatoria por AJAX
+    document.querySelectorAll('.ajax-form-ko').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = form.querySelector('button[type="submit"]');
+            if (!btn) return;
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = 'Guardando...';
+
+            const formData = new FormData(form);
+            const data = {
+                partido_id: formData.get('partido_id'),
+                gl: formData.get('gl'),
+                gv: formData.get('gv'),
+                pen_l: formData.get('pen_l'),
+                pen_v: formData.get('pen_v')
+            };
+
+            fetch('/api/guardar_partido_ko', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert(result.message || 'Error al guardar');
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                btn.disabled = false;
+                btn.textContent = originalText;
+            });
+        });
+    });
+
+    // Activar en OBS por AJAX sin refrescar
+    document.addEventListener('submit', function(e) {
+        if (!e.target.classList.contains('ajax-form-obs')) return;
+        e.preventDefault();
+
+        const form = e.target;
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Activando...';
+
+        fetch(form.action, { method: 'POST' })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success) {
+                location.reload();
+            } else {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        });
+    });
+});
+</script>
 {% endblock %}

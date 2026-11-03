@@ -32,46 +32,47 @@
                     <!-- TABLA DE POSICIONES -->
                     <h6 class="text-muted border-bottom pb-1 mb-2">Tabla de Posiciones</h6>
                     <div class="table-responsive mb-4">
-                        <table class="table table-sm table-striped align-middle text-center mb-0" style="font-size: 0.85rem;">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th class="text-start">Equipo</th>
-                                    <th>PJ</th>
-                                    <th>G</th>
-                                    <th>E</th>
-                                    <th>P</th>
-                                    <th>GF</th>
-                                    <th>GC</th>
-                                    <th>DG</th>
-                                    <th>Pts</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for fila in tablas[g.id] %}
-                                <tr>
-                                    <td class="text-start fw-bold">
-                                        <img src="{{ url_for('static', filename='uploads/' + fila.equipo.escudo) }}" width="18" height="18" class="me-1 style-contain">
-                                        {{ fila.equipo.nombre }}
-                                    </td>
-                                    <td>{{ fila.pj }}</td>
-                                    <td>{{ fila.g }}</td>
-                                    <td>{{ fila.e }}</td>
-                                    <td>{{ fila.p }}</td>
-                                    <td>{{ fila.gf }}</td>
-                                    <td>{{ fila.gc }}</td>
-                                    <td>{{ fila.dg }}</td>
-                                    <td class="fw-bold bg-light text-primary">{{ fila.pts }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+<!-- Dentro del bucle de cada grupo, asegúrate de identificar la tabla así: -->
+<table class="table table-sm table-striped align-middle text-center mb-0 tabla-grupo-{{ g.id }}" style="font-size: 0.85rem;">
+    <thead class="table-dark">
+        <tr>
+            <th class="text-start">Equipo</th>
+            <th>PJ</th>
+            <th>G</th>
+            <th>E</th>
+            <th>P</th>
+            <th>GF</th>
+            <th>GC</th>
+            <th>DG</th>
+            <th>Pts</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for fila in tablas[g.id] %}
+        <tr>
+            <td class="text-start fw-bold">
+                <img src="{{ url_for('static', filename='uploads/' + fila.equipo.escudo) }}" width="18" height="18" class="me-1 style-contain">
+                {{ fila.equipo.nombre }}
+            </td>
+            <td>{{ fila.pj }}</td>
+            <td>{{ fila.g }}</td>
+            <td>{{ fila.e }}</td>
+            <td>{{ fila.p }}</td>
+            <td>{{ fila.gf }}</td>
+            <td>{{ fila.gc }}</td>
+            <td>{{ fila.dg }}</td>
+            <td class="fw-bold bg-light text-primary">{{ fila.pts }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
                     </div>
 
                     <!-- PARTIDOS Y MARCADORES -->
                     <h6 class="text-muted border-bottom pb-1 mb-2">Partidos</h6>
                     {% for p in g.partidos %}
                     <div class="border-bottom pb-2 mb-2">
-                        <form method="POST" action="{{ url_for('grupos') }}" class="row g-2 align-items-center text-center">
+                        <form class="row g-2 align-items-center text-center ajax-form-grupo">
                             <input type="hidden" name="partido_id" value="{{ p.id }}">
                             
                             <!-- Equipo Local -->
@@ -101,11 +102,11 @@
                         </form>
 
                         <!-- Botón para OBS -->
-                        <div class="text-center mt-1">
+                        <div class="text-center mt-1 obs-action-container" data-tipo="grupo" data-id="{{ p.id }}">
                             {% if p.activo %}
-                                <span class="badge bg-danger animate__animated animate__flash">🔴 EN VIVO EN OBS</span>
+                                <span class="badge bg-danger animate__animated animate__flash" style="font-size: 0.65rem;">EN VIVO EN OBS</span>
                             {% else %}
-                                <form action="{{ url_for('activar_partido', tipo='grupo', partido_id=p.id) }}" method="POST" style="display:inline;">
+                                <form class="ajax-form-obs d-inline" action="{{ url_for('api_activar_partido', tipo='grupo', partido_id=p.id) }}" method="POST">
                                     <button type="submit" class="btn btn-sm btn-outline-danger py-0">📺 Transmitir en OBS</button>
                                 </form>
                             {% endif %}
@@ -118,4 +119,136 @@
         {% endfor %}
     </div>
 {% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Guardar resultado de grupo por AJAX sin recargar y actualizando la tabla al vuelo
+    document.querySelectorAll('.ajax-form-grupo').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = form.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = 'Guardando...';
+
+            const formData = new FormData(form);
+            const data = {
+                partido_id: formData.get('partido_id'),
+                gl: formData.get('gl'),
+                gv: formData.get('gv')
+            };
+
+            fetch('/api/guardar_partido_grupo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
+                    window.location.href = '/login';
+                    return;
+                }
+                return res.json();
+            })
+            .then(result => {
+                if (result && result.success) {
+                    // 1. Mostrar feedback visual temporal en el botón
+                    btn.textContent = '¡Guardado!';
+                    btn.classList.remove('btn-outline-secondary');
+                    btn.classList.add('btn-success');
+                    
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-outline-secondary');
+                    }, 1500);
+
+                    // 2. Actualizar dinámicamente la tabla de posiciones de ese grupo sin recargar
+                    const tbody = document.querySelector(`.tabla-grupo-${result.grupo_id} tbody`);
+                    if (tbody && result.tabla) {
+                        let newHtml = '';
+                        result.tabla.forEach(fila => {
+                            newHtml += `
+                                <tr>
+                                    <td class="text-start fw-bold">
+                                        <img src="${fila.equipo_escudo}" width="18" height="18" class="me-1 style-contain">
+                                        ${fila.equipo_nombre}
+                                    </td>
+                                    <td>${fila.pj}</td>
+                                    <td>${fila.g}</td>
+                                    <td>${fila.e}</td>
+                                    <td>${fila.p}</td>
+                                    <td>${fila.gf}</td>
+                                    <td>${fila.gc}</td>
+                                    <td>${fila.dg}</td>
+                                    <td class="fw-bold bg-light text-primary">${fila.pts}</td>
+                                </tr>
+                            `;
+                        });
+                        tbody.innerHTML = newHtml;
+                    }
+                } else if (result) {
+                    alert(result.message || 'Error al guardar');
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                btn.disabled = false;
+                btn.textContent = originalText;
+            });
+        });
+    });
+
+    // Activar en OBS por AJAX sin recargar
+    document.addEventListener('submit', function(e) {
+        if (!e.target.classList.contains('ajax-form-obs')) return;
+        e.preventDefault();
+
+        const form = e.target;
+        const container = form.closest('.obs-action-container');
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Activando...';
+
+        fetch(form.action, { method: 'POST' })
+        .then(res => {
+            if (res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            return res.json();
+        })
+        .then(result => {
+            if (result && result.success) {
+                document.querySelectorAll('.obs-action-container').forEach(cont => {
+                    const t = cont.getAttribute('data-tipo');
+                    const i = cont.getAttribute('data-id');
+                    if (cont === container) {
+                        cont.innerHTML = '<span class="badge bg-success" style="font-size: 0.65rem;">EN VIVO EN OBS</span>';
+                    } else {
+                        cont.innerHTML = `
+                            <form class="ajax-form-obs d-inline" action="/api/activar_partido/${t}/${i}" method="POST">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-0">📺 Transmitir en OBS</button>
+                            </form>
+                        `;
+                    }
+                });
+            } else {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        });
+    });
+});
+</script>
 {% endblock %}

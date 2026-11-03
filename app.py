@@ -201,27 +201,58 @@ def sortear_grupos():
     flash('Grupos sorteados con éxito.', 'success')
     return redirect(url_for('grupos'))
 
-@app.route('/grupos', methods=['GET', 'POST'])
+@app.route('/grupos', methods=['GET'])
 @login_requerido
 def grupos():
-    if request.method == 'POST':
-        partido_id = request.form.get('partido_id')
-        gl = request.form.get('gl')
-        gv = request.form.get('gv')
-        p = PartidoGrupo.query.get(partido_id)
-        if p and gl != '' and gv != '':
-            p.gl = int(gl)
-            p.gv = int(gv)
-            db.session.commit()
-            flash('Resultado guardado.', 'success')
-        return redirect(url_for('grupos'))
-
     lista_grupos = Grupo.query.all()
     tablas = {g.id: calcular_tabla(g) for g in lista_grupos}
     pendientes = PartidoGrupo.query.filter((PartidoGrupo.gl == None) | (PartidoGrupo.gv == None)).count()
     listo_para_ko = (len(lista_grupos) > 0) and (pendientes == 0)
 
     return render_template('grupos.html', grupos=lista_grupos, tablas=tablas, listo_para_ko=listo_para_ko)
+
+@app.route('/api/guardar_partido_grupo', methods=['POST'])
+@login_requerido
+def api_guardar_partido_grupo():
+    data = request.get_json() or request.form
+    partido_id = data.get('partido_id')
+    gl = data.get('gl')
+    gv = data.get('gv')
+    
+    p = PartidoGrupo.query.get(partido_id)
+    if p and gl is not None and gl != '' and gv is not None and gv != '':
+        p.gl = int(gl)
+        p.gv = int(gv)
+        db.session.commit()
+        
+        # Recalcular la tabla de posiciones de este grupo específico
+        grupo = Grupo.query.get(p.grupo_id)
+        tabla = calcular_tabla(grupo)
+        
+        # Serializar los datos para enviarlos por JSON a JavaScript
+        tabla_serializada = []
+        for fila in tabla:
+            tabla_serializada.append({
+                'equipo_nombre': fila['equipo'].nombre,
+                'equipo_escudo': url_for('static', filename='uploads/' + fila['equipo'].escudo),
+                'pj': fila['pj'],
+                'g': fila['g'],
+                'e': fila['e'],
+                'p': fila['p'],
+                'gf': fila['gf'],
+                'gc': fila['gc'],
+                'dg': fila['dg'],
+                'pts': fila['pts']
+            })
+            
+        return jsonify({
+            'success': True, 
+            'grupo_id': p.grupo_id,
+            'tabla': tabla_serializada,
+            'message': 'Resultado guardado.'
+        })
+        
+    return jsonify({'success': False, 'message': 'Datos inválidos.'}), 400
 
 @app.route('/generar_llaves')
 @login_requerido
@@ -241,23 +272,20 @@ def generar_llaves():
             for item in tabla[1:]:
                 resto_equipos.append(item)
 
-    # Ordenar los siguientes lugares por rendimiento
     resto_equipos.sort(key=lambda x: (-x['pts'], -x['dg'], -x['gf']))
-    
     total_base = len(clasificados)
     
-    # Forzar a potencias de 2 (2, 4, 8, 16) ajustando preferentemente hasta 16 (Octavos de Final)
     if total_base <= 2:
-        objetivo_llave = 2
-    elif total_base <= 4:
-        objetivo_llave = 4
-    elif total_base <= 8:
-        objetivo_llave = 8
+        objetivo = 2
+    elif total_base <= 3:
+        objetivo = 4
+    elif total_base <= 6:
+        objetivo = 8
     else:
-        objetivo_llave = 16
+        objetivo = 16
 
     i = 0
-    while len(clasificados) < objetivo_llave and i < len(resto_equipos):
+    while len(clasificados) < objetivo and i < len(resto_equipos):
         clasificados.append(resto_equipos[i]['equipo'])
         i += 1
 
@@ -265,28 +293,50 @@ def generar_llaves():
     db.session.commit()
 
     random.shuffle(clasificados)
-    n = len(clasificados)
     
-    # Nombre de la ronda inicial
-    if n > 8:
-        nombre_r = "Octavos de final"
-    elif n > 4:
-        nombre_r = "Cuartos de final"
-    elif n > 2:
-        nombre_r = "Semifinales"
-    else:
-        nombre_r = "Final"
+    num_rondas = int(math.log2(objetivo))
+    
+    def obtener_nombre_ronda(partidos_en_ronda):
+        if partidos_en_ronda == 1:
+            return "Final"
+        elif partidos_en_ronda == 2:
+            return "Semifinales"
+        elif partidos_en_ronda == 4:
+            return "Cuartos de final"
+        elif partidos_en_ronda == 8:
+            return "Octavos de final"
+        return f"Ronda de {partidos_en_ronda * 2}"
 
-    for k in range(0, n, 2):
+    partidos_ronda_1 = objetivo // 2
+    nombre_r1 = obtener_nombre_ronda(partidos_ronda_1)
+
+    for k in range(0, objetivo, 2):
         loc = clasificados[k]
-        vis = clasificados[k+1] if (k+1) < n else None
-        p = PartidoKO(ronda=1, nombre_ronda=nombre_r, posicion=k//2, local_id=loc.id, visita_id=vis.id if vis else None)
-        if vis is None:  # Pase automático
+        vis = clasificados[k+1] if (k+1) < objetivo else None
+        p = PartidoKO(ronda=1, nombre_ronda=nombre_r1, posicion=k//2, local_id=loc.id, visita_id=vis.id if vis else None)
+        if vis is None:
             p.ganador_id = loc.id
         db.session.add(p)
-    
+
+    partidos_en_ronda = partidos_ronda_1 // 2
+    ronda_actual = 2
+
+    while partidos_en_ronda >= 1:
+        nom_ronda = obtener_nombre_ronda(partidos_en_ronda)
+        for pos in range(partidos_en_ronda):
+            p_vacio = PartidoKO(ronda=ronda_actual, nombre_ronda=nom_ronda, posicion=pos, local_id=None, visita_id=None)
+            db.session.add(p_vacio)
+        
+        partidos_en_ronda //= 2
+        ronda_actual += 1
+
     db.session.commit()
-    flash('Fase de eliminación directa generada con éxito.', 'success')
+
+    for p in PartidoKO.query.filter_by(ronda=1).all():
+        if p.ganador_id:
+            propagar_ganador(p)
+
+    flash('Cuadro completo de eliminatoria generado.', 'success')
     return redirect(url_for('eliminatoria'))
 
 @app.route('/eliminar_equipo/<int:equipo_id>', methods=['POST'])
@@ -307,35 +357,9 @@ def eliminar_equipo(equipo_id):
     flash(f'El equipo "{equipo.nombre}" ha sido eliminado.', 'success')
     return redirect(url_for('equipos'))
 
-@app.route('/eliminatoria', methods=['GET', 'POST'])
+@app.route('/eliminatoria', methods=['GET'])
 @login_requerido
 def eliminatoria():
-    if request.method == 'POST':
-        partido_id = request.form.get('partido_id')
-        gl = int(request.form.get('gl', 0))
-        gv = int(request.form.get('gv', 0))
-        pen_l = request.form.get('pen_l')
-        pen_v = request.form.get('pen_v')
-
-        p = PartidoKO.query.get(partido_id)
-        if p:
-            p.gl = gl
-            p.gv = gv
-            if gl > gv:
-                p.ganador_id = p.local_id
-            elif gv > gl:
-                p.ganador_id = p.visita_id
-            else:
-                p.pen_l = int(pen_l) if pen_l else 0
-                p.pen_v = int(pen_v) if pen_v else 0
-                p.ganador_id = p.local_id if p.pen_l > p.pen_v else p.visita_id
-            
-            db.session.commit()
-            propagar_ganador(p)
-            flash('Resultado de eliminatoria actualizado.', 'success')
-
-        return redirect(url_for('eliminatoria'))
-
     partidos = PartidoKO.query.order_by(PartidoKO.ronda, PartidoKO.posicion).all()
     
     rondas = {}
@@ -345,6 +369,34 @@ def eliminatoria():
         rondas[p.ronda]['partidos'].append(p)
 
     return render_template('eliminatoria.html', rondas=rondas)
+
+@app.route('/api/guardar_partido_ko', methods=['POST'])
+@login_requerido
+def api_guardar_partido_ko():
+    data = request.get_json() or request.form
+    partido_id = data.get('partido_id')
+    gl = int(data.get('gl', 0))
+    gv = int(data.get('gv', 0))
+    pen_l = data.get('pen_l')
+    pen_v = data.get('pen_v')
+
+    p = PartidoKO.query.get(partido_id)
+    if p:
+        p.gl = gl
+        p.gv = gv
+        if gl > gv:
+            p.ganador_id = p.local_id
+        elif gv > gl:
+            p.ganador_id = p.visita_id
+        else:
+            p.pen_l = int(pen_l) if pen_l != '' and pen_l is not None else 0
+            p.pen_v = int(pen_v) if pen_v != '' and pen_v is not None else 0
+            p.ganador_id = p.local_id if p.pen_l > p.pen_v else p.visita_id
+        
+        db.session.commit()
+        propagar_ganador(p)
+        return jsonify({'success': True, 'message': 'Resultado de eliminatoria actualizado.'})
+    return jsonify({'success': False, 'message': 'Partido no encontrado.'}), 404
 
 def propagar_ganador(partido_actual):
     sig_ronda = partido_actual.ronda + 1
@@ -384,9 +436,9 @@ def obtener_partido_activo():
         return partido_ko, 'ko'
     return None, None
 
-@app.route('/activar_partido/<tipo>/<int:partido_id>', methods=['POST'])
+@app.route('/api/activar_partido/<tipo>/<int:partido_id>', methods=['POST'])
 @login_requerido
-def activar_partido(tipo, partido_id):
+def api_activar_partido(tipo, partido_id):
     PartidoGrupo.query.update({PartidoGrupo.activo: False})
     PartidoKO.query.update({PartidoKO.activo: False})
     
@@ -398,8 +450,7 @@ def activar_partido(tipo, partido_id):
         p.activo = True
         
     db.session.commit()
-    flash('Partido activado para la transmisión en OBS.', 'success')
-    return redirect(request.referrer or url_for('index'))
+    return jsonify({'success': True})
 
 @app.route('/obs/marcador/activo')
 def obs_marcador_activo():
@@ -443,12 +494,10 @@ def api_partido_ko(partido_id):
 @app.route('/reiniciar')
 @login_requerido
 def reiniciar():
-    # Eliminar solo partidos y grupos sin eliminar la tabla de equipos
     PartidoKO.query.delete()
     PartidoGrupo.query.delete()
     Grupo.query.delete()
     
-    # Desvincular equipos de los grupos eliminados
     for e in Equipo.query.all():
         e.grupo_id = None
         
