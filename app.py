@@ -504,7 +504,64 @@ def reiniciar():
     db.session.commit()
     flash('Se han borrado los grupos y partidos. Los equipos registrados se han conservado.', 'info')
     return redirect(url_for('equipos'))
+    estado_obs = {
+    'escena_actual': 'partido', # 'partido' o 'pausa'
+    'festejo_activo': False,
+    'equipo_festejo': '',
+    'minuto': 0,
+    'segundo': 0,
+    'cronometro_activo': False
+}
+estado_obs = {
+    'escena_actual': 'partido', # 'partido' o 'pausa'
+    'festejo_activo': False,
+    'equipo_festejo': '',
+    'minuto': 0,
+    'segundo': 0,
+    'cronometro_activo': False
+}
+@app.route('/panel_control')
+@login_requerido
+def panel_control():
+    partido, tipo = obtener_partido_activo()
+    return render_template('panel_control.html', partido=partido, tipo=tipo, estado=estado_obs)
 
+@app.route('/api/obs/control', methods=['POST'])
+@login_requerido
+def api_obs_control():
+    data = request.get_json() or {}
+    accion = data.get('accion')
+    
+    if accion == 'cambiar_escena':
+        estado_obs['escena_actual'] = data.get('escena', 'partido')
+    elif accion == 'festejo':
+        estado_obs['festejo_activo'] = True
+        estado_obs['equipo_festejo'] = data.get('equipo', '¡GOL!')
+    elif accion == 'festejo_off':
+        estado_obs['festejo_activo'] = False
+    elif accion == 'actualizar_tiempo':
+        estado_obs['minuto'] = data.get('minuto', 0)
+        estado_obs['segundo'] = data.get('segundo', 0)
+        
+    return jsonify({'success': True, 'estado': estado_obs})
+
+@app.route('/api/obs/estado')
+def api_obs_estado():
+    partido, tipo = obtener_partido_activo()
+    return jsonify({
+        'partido': {
+            'local_nombre': partido.local.nombre if partido and partido.local else 'Local',
+            'local_escudo': url_for('static', filename='uploads/' + partido.local.escudo) if partido and partido.local and partido.local.escudo else '',
+            'gl': partido.gl if partido and partido.gl is not None else 0,
+            'visita_nombre': partido.visita.nombre if partido and partido.visita else 'Visita',
+            'visita_escudo': url_for('static', filename='uploads/' + partido.visita.escudo) if partido and partido.visita and partido.visita.escudo else '',
+            'gv': partido.gv if partido and partido.gv is not None else 0,
+        } if partido else None,
+        'obs': estado_obs
+    })
+@app.route('/obs/overlay')
+def obs_overlay():
+    return render_template('obs_overlay.html')
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

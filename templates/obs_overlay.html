@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CUCEI Robot Soccer Cup - OBS Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,700;0,900;1,700;1,900&family=Orbitron:ital,wght@0,500;0,700;0,800;0,900;1,700;1,900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background-color: transparent !important;
+            color: #ffffff;
+            overflow: hidden;
+            user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .font-chakra { font-family: 'Chakra Petch', sans-serif; }
+
+        /* Gradientes Metálicos */
+        .gold-gradient-text {
+            background: linear-gradient(180deg, #FFFFFF 0%, #FFF8D0 18%, #F3D375 45%, #B8860B 75%, #E5C158 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.95));
+        }
+
+        .silver-gradient-text {
+            background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 25%, #CBD5E1 55%, #64748B 85%, #94A3B8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.95));
+        }
+
+        /* Marcos y Biseles Dorados Sci-Fi */
+        .gold-frame-bevel {
+            background: linear-gradient(180deg, #FFE58F 0%, #B8860B 40%, #E5C158 70%, #9A7114 100%);
+            padding: 2.5px;
+            box-shadow: 0 0 25px rgba(229, 193, 88, 0.45), inset 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+
+        .gold-badge-bg {
+            background: linear-gradient(135deg, #1c1505 0%, #42310b 25%, #8f6918 50%, #42310b 75%, #0e0a02 100%);
+            box-shadow: 0 0 20px rgba(229, 193, 88, 0.4), inset 0 0 12px rgba(243, 211, 117, 0.2);
+        }
+
+        .clip-hud-center { clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%); }
+        .clip-team-left { clip-path: polygon(0 0, 92% 0, 100% 100%, 0% 100%); }
+        .clip-team-right { clip-path: polygon(8% 0, 100% 0, 100% 100%, 0% 100%); }
+        .clip-banner { clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%); }
+
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+            background-size: 100% 4px;
+        }
+
+        @keyframes goal-zoom {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.15); opacity: 1; }
+            70% { transform: scale(0.95); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-goal { animation: goal-zoom 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        #obs-viewport {
+            width: 1920px;
+            height: 1080px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="obs-viewport">
+
+        <!-- ========================================================================= -->
+        <!-- ESCENA 1: MARCADOR Y HUD EN VIVO -->
+        <!-- ========================================================================= -->
+        <div id="scene-live" class="scene-layer absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-8">
+            
+            <!-- MARCADOR SUPERIOR -->
+            <div class="w-full flex justify-center items-start">
+                <div class="flex items-start max-w-[1550px] w-full justify-center">
+
+                    <!-- EQUIPO LOCAL -->
+                    <div class="flex-1 flex items-center justify-end">
+                        <div class="gold-frame-bevel rounded-l-2xl clip-team-left flex items-center bg-slate-900/95 pr-6 pl-8 py-2.5 border-l-4 border-yellow-400 min-w-[420px] justify-between shadow-2xl relative overflow-hidden">
+                            <div class="absolute inset-0 bg-blue-600/20 pointer-events-none"></div>
+                            <div class="flex items-center space-x-4 z-10">
+                                <img id="escudo-local" src="" width="45" height="45" class="object-contain filter drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]" alt="">
+                                <div class="flex flex-col items-start">
+                                    <div id="hud-team1-name" class="font-orbitron font-black italic text-3xl text-white tracking-wider uppercase drop-shadow-lg">LOCAL</div>
+                                    <span class="text-[11px] font-bold text-yellow-400 tracking-widest font-mono">CUCEI ROBOTICS</span>
+                                </div>
+                            </div>
+                            <div id="hud-team1-score" class="z-10 font-orbitron font-black italic text-6xl gold-gradient-text px-4 min-w-[70px] text-center">0</div>
+                        </div>
+                    </div>
+
+                    <!-- LOGO / BADGE CENTRAL -->
+                    <div class="relative z-20 mx-[-15px] flex flex-col items-center">
+                        <div class="gold-badge-bg border-2 border-yellow-400 rounded-b-2xl p-3 shadow-[0_12px_35px_rgba(0,0,0,0.95)] flex flex-col items-center min-w-[300px] clip-hud-center relative">
+                            <div class="flex items-center space-x-2">
+                                <div class="text-center">
+                                    <div class="text-[11px] font-black tracking-widest text-yellow-300 font-orbitron">CUCEI</div>
+                                    <div class="text-base font-black tracking-wider silver-gradient-text font-orbitron">ROBOT SOCCER CUP</div>
+                                </div>
+                            </div>
+
+                            <div class="mt-2.5 w-full bg-slate-950/95 rounded-lg border border-yellow-500/50 px-4 py-1 flex justify-between items-center shadow-inner">
+                                <div id="hud-period" class="text-xs font-bold text-cyan-400 font-orbitron tracking-wider">EN VIVO</div>
+                                <div id="hud-timer" class="text-2xl font-black font-mono text-yellow-400 tracking-widest">00:00</div>
+                                <div class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EQUIPO VISITANTE -->
+                    <div class="flex-1 flex items-center justify-start">
+                        <div class="gold-frame-bevel rounded-r-2xl clip-team-right flex items-center bg-slate-900/95 pl-6 pr-8 py-2.5 border-r-4 border-yellow-400 min-w-[420px] justify-between shadow-2xl relative overflow-hidden">
+                            <div class="absolute inset-0 bg-red-600/20 pointer-events-none"></div>
+                            <div id="hud-team2-score" class="z-10 font-orbitron font-black italic text-6xl gold-gradient-text px-4 min-w-[70px] text-center">0</div>
+                            <div class="flex items-center space-x-4 z-10 text-right">
+                                <div class="flex flex-col items-end">
+                                    <div id="hud-team2-name" class="font-orbitron font-black italic text-3xl text-white tracking-wider uppercase drop-shadow-lg">VISITA</div>
+                                    <span class="text-[11px] font-bold text-yellow-400 tracking-widest font-mono">CUCEI ROBOTICS</span>
+                                </div>
+                                <img id="escudo-visita" src="" width="45" height="45" class="object-contain filter drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]" alt="">
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- ESCENA 2: PANTALLA DE PAUSA / VOLVEMOS EN UN RATO -->
+        <!-- ========================================================================= -->
+        <div id="scene-pausa" class="scene-layer absolute inset-0 z-20 hidden flex flex-col justify-center items-center bg-slate-950/95">
+            <div class="gold-frame-bevel p-1 rounded-3xl max-w-4xl w-full shadow-[0_0_80px_rgba(229,193,88,0.5)]">
+                <div class="bg-slate-900 rounded-2xl py-16 px-12 text-center border border-yellow-500/40">
+                    <h1 class="font-orbitron font-black italic text-7xl tracking-wider gold-gradient-text uppercase">
+                        VOLVEMOS EN UN RATO
+                    </h1>
+                    <p class="font-chakra text-cyan-300 text-2xl mt-6 tracking-widest uppercase">
+                        PAUSA TÉCNICA / REORGANIZACIÓN DEL TORNEO
+                    </p>
+                    <div class="mt-8 flex justify-center items-center space-x-4">
+                        <span class="h-1.5 w-24 bg-yellow-400 rounded-full animate-pulse"></span>
+                        <span class="h-1.5 w-6 bg-cyan-400 rounded-full"></span>
+                        <span class="h-1.5 w-24 bg-yellow-400 rounded-full animate-pulse"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- POPUP CELEBRACIÓN DE GOL -->
+        <div id="goal-overlay" class="absolute inset-0 z-50 pointer-events-none hidden flex justify-center items-center">
+            <!-- Canvas para el confeti dorado -->
+            <canvas id="confetti-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+            <div class="animate-goal text-center z-10 w-full px-4 flex flex-col items-center justify-center py-20">
+                <div class="text-3xl font-black font-orbitron text-cyan-300 tracking-widest uppercase drop-shadow-md mb-2">¡ANOTACIÓN REGISTRADA!</div>
+                
+                <div class="py-4 px-10">
+                    <div class="font-orbitron font-black italic text-8xl lg:text-9xl gold-gradient-text drop-shadow-[0_15px_35px_rgba(0,0,0,0.9)]" style="line-height: 1.2; padding: 10px 20px; letter-spacing: 0.05em;">¡GOL!</div>
+                </div>
+
+                <div id="goal-team-name" class="font-orbitron font-black italic text-3xl lg:text-5xl text-white uppercase border-y-4 border-yellow-400 py-3 px-12 bg-slate-900/95 shadow-2xl max-w-5xl mt-2">EQUIPO</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Sistema de Confeti Dorado para el Gol
+        let confettiAnimationId = null;
+
+        function lanzarConfetiDorado() {
+            const canvas = document.getElementById('confetti-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = 1920;
+            canvas.height = 1080;
+
+            const particles = [];
+            const colors = ['#FFE58F', '#B8860B', '#E5C158', '#FFF8D0', '#F3D375', '#ffffff'];
+
+            // Crear 120 partículas de confeti
+            for (let i = 0; i < 120; i++) {
+                particles.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height - canvas.height, // Empiezan arriba fuera de pantalla
+                    w: Math.random() * 12 + 8,
+                    h: Math.random() * 6 + 4,
+                    speedY: Math.random() * 6 + 3,
+                    speedX: (Math.random() - 0.5) * 4,
+                    rotation: Math.random() * 360,
+                    rotationSpeed: (Math.random() - 0.5) * 10,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    opacity: Math.random() * 0.7 + 0.3
+                });
+            }
+
+            function loop() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                let activeParticles = 0;
+                particles.forEach(p => {
+                    p.y += p.speedY;
+                    p.x += p.speedX;
+                    p.rotation += p.rotationSpeed;
+
+                    if (p.y < canvas.height + 50) {
+                        activeParticles++;
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate((p.rotation * Math.PI) / 180);
+                        ctx.globalAlpha = p.opacity;
+                        ctx.fillStyle = p.color;
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = '#E5C158';
+                        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+                        ctx.restore();
+                    }
+                });
+
+                if (activeParticles > 0) {
+                    confettiAnimationId = requestAnimationFrame(loop);
+                }
+            }
+
+            loop();
+        }
+
+        function detenerConfeti() {
+            if (confettiAnimationId) {
+                cancelAnimationFrame(confettiAnimationId);
+                confettiAnimationId = null;
+            }
+            const canvas = document.getElementById('confetti-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        function actualizarOverlay() {
+            fetch('/api/obs/estado')
+                .then(res => res.json())
+                .then(data => {
+                    // Control de Escenas (Partido vs Pausa)
+                    const escena = data.obs.escena_actual; // 'partido' o 'pausa'
+                    const pausaDiv = document.getElementById('scene-pausa');
+                    const liveDiv = document.getElementById('scene-live');
+
+                    if (escena === 'pausa') {
+                        pausaDiv.classList.remove('hidden');
+                        liveDiv.classList.add('hidden');
+                    } else {
+                        pausaDiv.classList.add('hidden');
+                        liveDiv.classList.remove('hidden');
+                    }
+
+                    // Control de Festejo de Gol y Confeti
+                    const goalOverlay = document.getElementById('goal-overlay');
+                    if (data.obs.festejo_activo) {
+                        document.getElementById('goal-team-name').textContent = data.obs.equipo_festejo;
+                        if (goalOverlay.classList.contains('hidden')) {
+                            goalOverlay.classList.remove('hidden');
+                            lanzarConfetiDorado(); // Dispara la lluvia dorada
+                        }
+                    } else {
+                        if (!goalOverlay.classList.contains('hidden')) {
+                            goalOverlay.classList.add('hidden');
+                            detenerConfeti(); // Limpia el canvas al apagar el festejo
+                        }
+                    }
+
+                    // Cronómetro
+                    const m = String(data.obs.minuto || 0).padStart(2, '0');
+                    const s = String(data.obs.segundo || 0).padStart(2, '0');
+                    document.getElementById('hud-timer').textContent = `${m}:${s}`;
+
+                    // Datos del Partido y Goles
+                    if (data.partido) {
+                        document.getElementById('hud-team1-name').textContent = data.partido.local_nombre;
+                        document.getElementById('hud-team1-score').textContent = data.partido.gl;
+                        if (data.partido.local_escudo) {
+                            document.getElementById('escudo-local').src = data.partido.local_escudo;
+                        }
+
+                        document.getElementById('hud-team2-name').textContent = data.partido.visita_nombre;
+                        document.getElementById('hud-team2-score').textContent = data.partido.gv;
+                        if (data.partido.visita_escudo) {
+                            document.getElementById('escudo-visita').src = data.partido.visita_escudo;
+                        }
+                    }
+                })
+                .catch(err => console.error("Error sincronizando OBS:", err));
+        }
+
+        // Consultar cada segundo para actualización fluida en tiempo real
+        setInterval(actualizarOverlay, 1000);
+        actualizarOverlay();
+    </script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4 text-center">🎛️ Panel de Control de Transmisión (OBS)</h2>
+
+    <div class="row g-4">
+        <!-- Control de Pantallas / Escenas -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-dark text-white fw-bold">📺 Control de Pantallas OBS</div>
+                <div class="card-body text-center d-flex flex-column justify-content-center gap-3">
+                    <button class="btn btn-success btn-lg py-3 fw-bold" onclick="cambiarEscena('partido')">▶️ Mostrar Partido / Marcador</button>
+                    <button class="btn btn-warning btn-lg py-3 fw-bold text-dark" onclick="cambiarEscena('pausa')">☕ Volvemos en un rato (Pausa)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control del Cronómetro -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-dark text-white fw-bold">⏱️ Cronómetro del Partido</div>
+                <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+                    <div display class="display-3 font-monospace mb-3 fw-bold text-primary" id="timer-display">00:00</div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary px-4" onclick="iniciarReloj()">Iniciar</button>
+                        <button class="btn btn-secondary px-4" onclick="pausarReloj()">Pausar</button>
+                        <button class="btn btn-danger px-4" onclick="resetearReloj()">Reiniciar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Disparador de Festejos manuales -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white fw-bold">🎉 Efectos en Pantalla (Festejos)</div>
+                <div class="card-body text-center">
+                    <p class="text-muted">Dispara una animación gigante de gol en la transmisión:</p>
+                    <div class="d-flex justify-content-center gap-3">
+                        <button class="btn btn-outline-primary btn-lg px-5" onclick="lanzarFestejo('{{ partido.local.nombre if partido and partido.local else "LOCAL" }}')">⚽ Festejo Local</button>
+                        <button class="btn btn-outline-danger btn-lg px-5" onclick="lanzarFestejo('{{ partido.visita.nombre if partido and partido.visita else "VISITA" }}')">⚽ Festejo Visita</button>
+                        <button class="btn btn-dark btn-lg" onclick="apagarFestejo()">Ocultar Festejo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let minutos = 0;
+    let segundos = 0;
+    let intervaloReloj = null;
+
+    function cambiarEscena(escena) {
+        fetch('/api/obs/control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({accion: 'cambiar_escena', escena: escena})
+        });
+    }
+
+    function lanzarFestejo(equipo) {
+        fetch('/api/obs/control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({accion: 'festejo', equipo: equipo})
+        });
+    }
+
+    function apagarFestejo() {
+        fetch('/api/obs/control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({accion: 'festejo_off'})
+        });
+    }
+
+    function actualizarServidorTiempo() {
+        fetch('/api/obs/control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({accion: 'actualizar_tiempo', minuto: minutos, segundo: segundos})
+        });
+    }
+
+    function iniciarReloj() {
+        if (intervaloReloj) return;
+        intervaloReloj = setInterval(() => {
+            segundos++;
+            if (segundos === 60) {
+                segundos = 0;
+                minutos++;
+            }
+            document.getElementById('timer-display').textContent = 
+                String(minutos).padStart(2, '0') + ':' + String(segundos).padStart(2, '0');
+            actualizarServidorTiempo();
+        }, 1000);
+    }
+
+    function pausarReloj() {
+        clearInterval(intervaloReloj);
+        intervaloReloj = null;
+    }
+
+    function resetearReloj() {
+        pausarReloj();
+        minutos = 0;
+        segundos = 0;
+        document.getElementById('timer-display').textContent = "00:00";
+        actualizarServidorTiempo();
+    }
+</script>
+{% endblock %}
